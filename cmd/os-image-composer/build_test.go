@@ -20,6 +20,8 @@ func resetBuildFlags() {
 	workers = -1
 	cacheDir = ""
 	workDir = ""
+	snapshotSave = ""
+	snapshotLoad = ""
 }
 
 // createTestTemplate creates a minimal valid template file for testing

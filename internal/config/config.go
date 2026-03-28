@@ -91,6 +91,7 @@ type ImageTemplate struct {
 	FullPkgListBom       []ospackage.PackageInfo `yaml:"-"`
 	DotFilePath          string                  `yaml:"-"`
 	DotSystemOnly        bool                    `yaml:"-"`
+	SnapshotPackageVersions map[string]string    `yaml:"-"` // Pinned versions from snapshot
 	pureBuildStart       time.Time
 	pureBuildDuration    time.Duration
 	downloadPkgsStart    time.Time

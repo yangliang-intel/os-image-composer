@@ -34,10 +34,11 @@ type RepoConfig struct {
 }
 
 var (
-	RepoCfg  RepoConfig
-	GzHref   string
-	UserRepo []config.PackageRepository
-	Dist     string
+	RepoCfg        RepoConfig
+	GzHref         string
+	UserRepo       []config.PackageRepository
+	Dist           string
+	PinnedPackages map[string]string // Snapshot-pinned packages: name -> "version-release"
 )
 
 func Packages() ([]ospackage.PackageInfo, error) {
@@ -382,6 +383,62 @@ func Resolve(req []ospackage.PackageInfo, all []ospackage.PackageInfo) ([]ospack
 	return needed, nil
 }
 
+// FilterByPinnedVersions filters the full package list to only include packages at their pinned
+// versions from a snapshot. Non-pinned packages pass through unchanged.
+// pinnedPackages is a map of packageName -> "version-release" (e.g., "kernel" -> "6.12.67-1.emt3").
+func FilterByPinnedVersions(all []ospackage.PackageInfo, pinnedPackages map[string]string) []ospackage.PackageInfo {
+	if len(pinnedPackages) == 0 {
+		return all
+	}
+
+	log := logger.Logger()
+	log.Infof("Applying snapshot: filtering %d packages to pinned versions", len(all))
+
+	// Index all packages by PkgName (the human-readable package name like "kernel")
+	byName := make(map[string][]ospackage.PackageInfo)
+	for _, pkg := range all {
+		key := pkg.PkgName
+		if key == "" {
+			key = pkg.Name
+		}
+		byName[key] = append(byName[key], pkg)
+	}
+
+	result := make([]ospackage.PackageInfo, 0, len(all))
+	pinned := 0
+
+	for name, pkgs := range byName {
+		exactVersion, isPinned := pinnedPackages[name]
+		if !isPinned {
+			// Not pinned — include all versions (resolver picks the latest)
+			result = append(result, pkgs...)
+			continue
+		}
+
+		// Find the package with the exact version (Version field from ospackage.PackageInfo)
+		var matched *ospackage.PackageInfo
+		for i := range pkgs {
+			if pkgs[i].Version == exactVersion {
+				matched = &pkgs[i]
+				break
+			}
+		}
+
+		if matched != nil {
+			result = append(result, *matched)
+			pinned++
+			log.Debugf("Pinned %s to %s", name, exactVersion)
+		} else {
+			// Exact version not found in repo; fall back to including all
+			log.Warnf("Snapshot pinned version %s=%s not found in repository, using latest", name, exactVersion)
+			result = append(result, pkgs...)
+		}
+	}
+
+	log.Infof("Snapshot applied: pinned %d/%d packages", pinned, len(pinnedPackages))
+	return result
+}
+
 // DownloadPackages downloads packages and returns the list of downloaded package names.
 func DownloadPackages(pkgList []string, destDir, dotFile string, pkgSources map[string]config.PackageSource, systemRootsOnly bool) ([]string, error) {
 	downloadedPkgs, _, err := DownloadPackagesComplete(pkgList, destDir, dotFile, pkgSources, systemRootsOnly)
@@ -416,6 +473,11 @@ func DownloadPackagesComplete(pkgList []string, destDir, dotFile string, pkgSour
 			all[i].Name = all[i].Name[idx:]
 		}
 		// If PkgName is not found or is at the beginning, keep the original Name
+	}
+
+	// Apply snapshot pinning if a snapshot was loaded
+	if len(PinnedPackages) > 0 {
+		all = FilterByPinnedVersions(all, PinnedPackages)
 	}
 
 	// Match the packages in the template against all the packages

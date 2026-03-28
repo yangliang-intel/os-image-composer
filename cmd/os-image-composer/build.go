@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/open-edge-platform/os-image-composer/internal/config"
+	"github.com/open-edge-platform/os-image-composer/internal/config/snapshot"
+	"github.com/open-edge-platform/os-image-composer/internal/ospackage/rpmutils"
 	"github.com/open-edge-platform/os-image-composer/internal/provider"
 	"github.com/open-edge-platform/os-image-composer/internal/provider/azl"
 	"github.com/open-edge-platform/os-image-composer/internal/provider/elxr"
@@ -26,6 +28,8 @@ var (
 	workDir            string = "" // Empty means use config file value
 	dotFile            string = "" // Generate a dot file for the dependency graph
 	systemPackagesOnly bool   = false
+	snapshotSave       string = "" // Save exact package versions to snapshot file
+	snapshotLoad       string = "" // Load and use exact package versions from snapshot file
 )
 
 // createBuildCommand creates the build subcommand
@@ -50,6 +54,8 @@ The template file must be in YAML format following the image template schema.`,
 	buildCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	buildCmd.Flags().StringVarP(&dotFile, "dotfile", "f", "", "Generate a dot file for the dependency graph")
 	buildCmd.Flags().BoolVar(&systemPackagesOnly, "system-packages-only", false, "When generating a dot graph, only include roots from SystemConfig.Packages")
+	buildCmd.Flags().StringVar(&snapshotSave, "snapshot-save", "", "Save exact package versions and dependencies to this file for reproducible builds")
+	buildCmd.Flags().StringVar(&snapshotLoad, "snapshot-load", "", "Load and use exact package versions from a previous snapshot file for reproducible builds")
 
 	return buildCmd
 }
@@ -108,6 +114,24 @@ func executeBuild(cmd *cobra.Command, args []string) error {
 		log.Infof("Dependency graph will be written to %s", dotFilePath)
 	}
 
+	// Load snapshot if provided
+	if snapshotLoad != "" {
+		snap, err := snapshot.LoadSnapshot(snapshotLoad)
+		if err != nil {
+			return fmt.Errorf("loading snapshot failed: %v", err)
+		}
+
+		// Validate and apply snapshot
+		if err := snapshot.ApplySnapshot(snap, template); err != nil {
+			return fmt.Errorf("applying snapshot failed: %v", err)
+		}
+
+		// Propagate pinned versions to rpmutils for package filtering
+		rpmutils.PinnedPackages = template.SnapshotPackageVersions
+
+		log.Infof("Snapshot loaded and applied: %s", snap.Summary())
+	}
+
 	p, err := InitProvider(template.Target.OS, template.Target.Dist, template.Target.Arch)
 	if err != nil {
 		buildErr = fmt.Errorf("initializing provider failed: %v", err)
@@ -137,6 +161,16 @@ post:
 		log.Info("image build completed successfully")
 		template.MarkBuildFinished()
 		displayImageBuildTiming(template.Target.ImageType, template)
+
+		// Save snapshot if requested
+		if snapshotSave != "" {
+			snap := snapshot.NewSnapshot(template)
+			if err := snapshot.SaveSnapshot(snap, snapshotSave); err != nil {
+				log.Warnf("failed to save snapshot: %v", err)
+			} else {
+				log.Infof("Snapshot saved to: %s", snapshotSave)
+			}
+		}
 	} else {
 		// Avoid logging the full error chain to prevent potential leakage of sensitive data.
 		// Log only the error type/category to aid debugging without exposing sensitive details.
