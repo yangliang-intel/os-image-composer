@@ -1765,6 +1765,11 @@ func (imageOs *ImageOs) generateSBOM(installRoot string, template *config.ImageT
 		}
 	}
 
+	// Keep the template BOM list aligned with the installed package set so any
+	// post-build consumers (e.g. snapshot export) use the same deterministic set
+	// as SPDX generation.
+	template.FullPkgListBom = finalPkgs
+
 	log.Infof("SBOM raw data (installed=%d, downloaded=%d, final=%d)", len(installRootPkgs), len(downloadedPkgs), len(finalPkgs))
 
 	// Generate SPDX manifest, generated in temp directory

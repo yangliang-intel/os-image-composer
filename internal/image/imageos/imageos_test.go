@@ -3533,10 +3533,10 @@ func TestGenerateSBOMPackageMatching(t *testing.T) {
 				return
 			}
 
-			// The actual matching logic is tested implicitly through the mock
-			// In a real implementation, we might want to access the internal
-			// finalPkgs slice to verify the count, but since it's not exposed,
-			// we verify the function completes without error
+			if got := len(template.FullPkgListBom); got != tc.expectedCount {
+				t.Errorf("matched package count mismatch: got %d, want %d", got, tc.expectedCount)
+			}
+
 			t.Logf("Package matching test completed for case: %s", tc.name)
 		})
 	}

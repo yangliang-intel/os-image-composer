@@ -117,7 +117,12 @@ type Snapshot struct {
 
 ### 2. Save Snapshot
 
-**When**: After package resolution, before image build
+**When**: After image build package installation and SBOM matching
+
+**Important**: Snapshot package contents are captured from the same installed-matched
+package set used for SPDX generation (not the raw unresolved/download candidate list).
+This avoids false diffs when multiple versions are temporarily resolved but only one
+version is actually installed.
 
 **Location**: In `PostProcess` or after `PreProcess`
 
