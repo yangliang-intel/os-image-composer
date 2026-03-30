@@ -124,6 +124,11 @@ package set used for SPDX generation (not the raw unresolved/download candidate 
 This avoids false diffs when multiple versions are temporarily resolved but only one
 version is actually installed.
 
+For ISO builds (where packages are copied into the ISO cache repository instead of
+installed into a rootfs), snapshot package contents are synchronized to the final
+`FullPkgList` package-file set after download/sorting. This keeps ISO snapshots
+deterministic and aligned with the exact package files embedded in the ISO.
+
 **Location**: In `PostProcess` or after `PreProcess`
 
 ```go

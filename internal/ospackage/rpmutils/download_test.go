@@ -1376,3 +1376,97 @@ func TestUserRepoConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestFilterByPinnedVersions_DeterministicOrder verifies that FilterByPinnedVersions produces
+// a deterministically sorted result regardless of Go map-iteration order. Without sorting,
+// two alternate providers of the same capability (e.g. cyrus-sasl-bootstrap-lib and
+// cyrus-sasl-lib both providing libsasl2.so.3) may appear in different orders across runs,
+// making snapshot-load builds non-reproducible.
+func TestFilterByPinnedVersions_DeterministicOrder(t *testing.T) {
+	// Simulate the real scenario: two packages that provide the same capability.
+	// Output must be alphabetically sorted regardless of input order.
+	all := []ospackage.PackageInfo{
+		{Name: "cyrus-sasl-lib-2.1.28-8.emt3.x86_64.rpm", PkgName: "cyrus-sasl-lib", Version: "0:2.1.28-8.emt3",
+			URL: "https://repo.example.com/Packages/c/cyrus-sasl-lib-2.1.28-8.emt3.x86_64.rpm"},
+		{Name: "cyrus-sasl-bootstrap-lib-2.1.28-8.emt3.x86_64.rpm", PkgName: "cyrus-sasl-bootstrap-lib", Version: "0:2.1.28-8.emt3",
+			URL: "https://repo.example.com/Packages/c/cyrus-sasl-bootstrap-lib-2.1.28-8.emt3.x86_64.rpm"},
+		{Name: "zlib-1.3.1-1.emt3.x86_64.rpm", PkgName: "zlib", Version: "1.3.1-1.emt3",
+			URL: "https://repo.example.com/Packages/z/zlib-1.3.1-1.emt3.x86_64.rpm"},
+		{Name: "acl-2.3.2-1.emt3.x86_64.rpm", PkgName: "acl", Version: "2.3.2-1.emt3",
+			URL: "https://repo.example.com/Packages/a/acl-2.3.2-1.emt3.x86_64.rpm"},
+	}
+
+	pinned := map[string]string{
+		"cyrus-sasl-bootstrap-lib": "0:2.1.28-8.emt3",
+		"cyrus-sasl-lib":           "0:2.1.28-8.emt3",
+		"zlib":                     "1.3.1-1.emt3",
+		"acl":                      "2.3.2-1.emt3",
+	}
+
+	// Run many times: map iteration order is random, output must be stable.
+	const runs = 20
+	var firstResult []string
+	for i := 0; i < runs; i++ {
+		result := rpmutils.FilterByPinnedVersions(all, pinned)
+		names := make([]string, len(result))
+		for j, pkg := range result {
+			names[j] = pkg.Name
+		}
+		if firstResult == nil {
+			firstResult = names
+		} else {
+			for j, name := range names {
+				if name != firstResult[j] {
+					t.Errorf("run %d: result[%d] = %q, want %q (non-deterministic ordering detected)",
+						i, j, name, firstResult[j])
+				}
+			}
+		}
+	}
+
+	// Output must be alphabetically sorted by package filename.
+	expectedOrder := []string{
+		"acl-2.3.2-1.emt3.x86_64.rpm",
+		"cyrus-sasl-bootstrap-lib-2.1.28-8.emt3.x86_64.rpm",
+		"cyrus-sasl-lib-2.1.28-8.emt3.x86_64.rpm",
+		"zlib-1.3.1-1.emt3.x86_64.rpm",
+	}
+	if len(firstResult) != len(expectedOrder) {
+		t.Fatalf("got %d packages, want %d", len(firstResult), len(expectedOrder))
+	}
+	for i, want := range expectedOrder {
+		if firstResult[i] != want {
+			t.Errorf("sorted result[%d] = %q, want %q", i, firstResult[i], want)
+		}
+	}
+}
+
+// TestFilterByPinnedVersions_NonPinnedPassThrough verifies that packages not present in
+// the pinned map pass through unmodified while pinned packages are filtered to their exact version.
+func TestFilterByPinnedVersions_NonPinnedPassThrough(t *testing.T) {
+	all := []ospackage.PackageInfo{
+		{Name: "kernel-6.12.67-1.emt3.x86_64.rpm", PkgName: "kernel", Version: "6.12.67-1.emt3"},
+		{Name: "kernel-6.12.66-1.emt3.x86_64.rpm", PkgName: "kernel", Version: "6.12.66-1.emt3"},
+		{Name: "bash-5.2.21-1.emt3.x86_64.rpm", PkgName: "bash", Version: "5.2.21-1.emt3"},
+	}
+	pinned := map[string]string{
+		"kernel": "6.12.67-1.emt3",
+		// bash is not pinned — all versions pass through
+	}
+	result := rpmutils.FilterByPinnedVersions(all, pinned)
+
+	found := make(map[string]bool)
+	for _, pkg := range result {
+		found[pkg.Name] = true
+	}
+
+	if !found["kernel-6.12.67-1.emt3.x86_64.rpm"] {
+		t.Error("expected pinned kernel 6.12.67 to be in result")
+	}
+	if found["kernel-6.12.66-1.emt3.x86_64.rpm"] {
+		t.Error("expected old kernel 6.12.66 to be filtered out")
+	}
+	if !found["bash-5.2.21-1.emt3.x86_64.rpm"] {
+		t.Error("expected unpinned bash to pass through")
+	}
+}

@@ -66,6 +66,7 @@ func selectByPriorityThenRepo(parentBase string, candidates []ospackage.PackageI
 	}
 
 	var sameRepoCandidates []ospackage.PackageInfo
+
 	for _, candidate := range highestPriorityCandidates {
 		candidateBase, err := extractRepoBase(candidate.URL)
 		if err != nil {
@@ -81,16 +82,27 @@ func selectByPriorityThenRepo(parentBase string, candidates []ospackage.PackageI
 	}
 
 	if len(sameRepoCandidates) > 1 {
-		latest := sameRepoCandidates[0]
-		for _, candidate := range sameRepoCandidates[1:] {
-			cmp := compareVersions(candidate.Version, latest.Version)
-			if cmp > 0 {
-				latest = candidate
+		// Sort by version descending; break exact-version ties alphabetically by filename.
+		// Without the alphabetical tiebreaker, two candidates with the same version (e.g.
+		// cyrus-sasl-bootstrap-lib and cyrus-sasl-lib, both at 2.1.28-8.emt3) would resolve
+		// to whichever appeared first in the slice (input-order dependent, non-deterministic).
+		sort.SliceStable(sameRepoCandidates, func(i, j int) bool {
+			cmp := compareVersions(sameRepoCandidates[i].Version, sameRepoCandidates[j].Version)
+			if cmp != 0 {
+				return cmp > 0 // prefer higher version
 			}
-		}
-		return latest
+			return sameRepoCandidates[i].Name < sameRepoCandidates[j].Name // alphabetical tiebreaker
+		})
+		return sameRepoCandidates[0]
 	}
 
+	// Last-resort tiebreaker: sort alphabetically by package filename for determinism.
+	// This prevents Go map-iteration order or XML parse order from affecting which
+	// of two equally-prioritised providers is selected (e.g. cyrus-sasl-bootstrap-lib
+	// vs cyrus-sasl-lib both providing libsasl2.so.3).
+	sort.Slice(highestPriorityCandidates, func(i, j int) bool {
+		return highestPriorityCandidates[i].Name < highestPriorityCandidates[j].Name
+	})
 	return highestPriorityCandidates[0]
 }
 

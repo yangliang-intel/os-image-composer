@@ -12,11 +12,44 @@ import (
 	"github.com/open-edge-platform/os-image-composer/internal/config/manifest"
 	"github.com/open-edge-platform/os-image-composer/internal/image/imageos"
 	"github.com/open-edge-platform/os-image-composer/internal/image/initrdmaker"
+	"github.com/open-edge-platform/os-image-composer/internal/ospackage"
 	"github.com/open-edge-platform/os-image-composer/internal/utils/file"
 	"github.com/open-edge-platform/os-image-composer/internal/utils/logger"
 	"github.com/open-edge-platform/os-image-composer/internal/utils/shell"
 	"github.com/open-edge-platform/os-image-composer/internal/utils/system"
 )
+
+func syncFullPkgListBomWithFullPkgList(template *config.ImageTemplate) {
+	if template == nil || len(template.FullPkgList) == 0 || len(template.FullPkgListBom) == 0 {
+		return
+	}
+
+	bomByFileName := make(map[string][]int, len(template.FullPkgListBom))
+	for index, pkgInfo := range template.FullPkgListBom {
+		bomByFileName[pkgInfo.Name] = append(bomByFileName[pkgInfo.Name], index)
+	}
+
+	synced := make([]ospackage.PackageInfo, 0, len(template.FullPkgList))
+	missing := 0
+	for _, pkgFileName := range template.FullPkgList {
+		indices := bomByFileName[pkgFileName]
+		if len(indices) == 0 {
+			missing++
+			continue
+		}
+
+		synced = append(synced, template.FullPkgListBom[indices[0]])
+		bomByFileName[pkgFileName] = indices[1:]
+	}
+
+	if len(synced) > 0 {
+		template.FullPkgListBom = synced
+	}
+
+	if missing > 0 {
+		log.Warnf("ISO package metadata sync skipped %d package files missing from FullPkgListBom", missing)
+	}
+}
 
 type IsoMakerInterface interface {
 	Init() error          // Initialize with stored template
@@ -84,6 +117,7 @@ func (isoMaker *IsoMaker) Init() error {
 func (isoMaker *IsoMaker) BuildIsoImage() (err error) {
 
 	log.Infof("Building ISO image for: %s", isoMaker.template.GetImageName())
+	syncFullPkgListBomWithFullPkgList(isoMaker.template)
 
 	if err := isoMaker.buildInitrd(isoMaker.template); err != nil {
 		return fmt.Errorf("failed to build initrd image: %w", err)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -434,6 +435,15 @@ func FilterByPinnedVersions(all []ospackage.PackageInfo, pinnedPackages map[stri
 			result = append(result, pkgs...)
 		}
 	}
+
+	// Sort result deterministically by package filename to eliminate Go map-iteration
+	// randomness. Without this, two packages providing the same capability (e.g.
+	// cyrus-sasl-bootstrap-lib and cyrus-sasl-lib both provide libsasl2.so.3) may be
+	// returned in a different order, causing the resolver to pick a different provider
+	// between builds and producing non-reproducible snapshots.
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
 
 	log.Infof("Snapshot applied: pinned %d/%d packages", pinned, len(pinnedPackages))
 	return result

@@ -1316,3 +1316,43 @@ func TestGenerateSPDXFileNameConsistency(t *testing.T) {
 		t.Errorf("Second result %q does not match expected pattern", result2)
 	}
 }
+
+// TestSelectByPriorityThenRepo_AlphabeticalTiebreaker verifies that when two candidates have
+// identical priority, repo base, and version, the function selects the alphabetically-first
+// package name. This prevents non-deterministic provider selection when two packages provide
+// the same capability (e.g. cyrus-sasl-bootstrap-lib and cyrus-sasl-lib both providing
+// libsasl2.so.3 in the emt3 repo).
+func TestSelectByPriorityThenRepo_AlphabeticalTiebreaker(t *testing.T) {
+	// Both packages share the same repo, same version, same priority — alphabetical wins.
+	candidates := []ospackage.PackageInfo{
+		{
+			Name:    "cyrus-sasl-lib-2.1.28-8.emt3.x86_64.rpm",
+			Version: "0:2.1.28-8.emt3",
+			URL:     "https://files-rs.intel.com/rpms/3.0/base/Packages/c/cyrus-sasl-lib-2.1.28-8.emt3.x86_64.rpm",
+		},
+		{
+			Name:    "cyrus-sasl-bootstrap-lib-2.1.28-8.emt3.x86_64.rpm",
+			Version: "0:2.1.28-8.emt3",
+			URL:     "https://files-rs.intel.com/rpms/3.0/base/Packages/c/cyrus-sasl-bootstrap-lib-2.1.28-8.emt3.x86_64.rpm",
+		},
+	}
+
+	// parentBase matches neither exactly, so same-repo selection is skipped and
+	// alphabetical tiebreaker is used.
+	parentBase := "https://files-rs.intel.com/rpms/3.0/base/Packages/"
+
+	// Run many times to confirm no flakiness.
+	const runs = 20
+	for i := 0; i < runs; i++ {
+		// Vary input order each iteration to ensure result is independent of slice order.
+		if i%2 == 0 {
+			candidates[0], candidates[1] = candidates[1], candidates[0]
+		}
+		chosen := selectByPriorityThenRepo(parentBase, candidates)
+		const want = "cyrus-sasl-bootstrap-lib-2.1.28-8.emt3.x86_64.rpm"
+		if chosen.Name != want {
+			t.Errorf("run %d: got %q, want %q (alphabetical tiebreaker not applied)",
+				i, chosen.Name, want)
+		}
+	}
+}
