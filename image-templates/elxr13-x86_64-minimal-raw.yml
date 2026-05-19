@@ -1,6 +1,6 @@
 # AI-searchable metadata for template discovery
 metadata:
-  description: Minimal ELXR 12 image with essential packages for lightweight deployments
+  description: Minimal ELXR 13 image with essential packages for lightweight deployments
   use_cases:
     - Lightweight edge device base image
     - Starting point for custom ELXR deployments
@@ -15,7 +15,7 @@ metadata:
 
 image:
   name: elxr13-x86_64-minimal
-  version: "1.0.0"
+  version: "1.0.1"
 
 target:
   os: wind-river-elxr # Target OS name
@@ -24,6 +24,11 @@ target:
   imageType: raw # Image type, valid value: [raw, iso].
 
 packageRepositories:
+  - codename: "trixie"
+    url: "https://deb.debian.org/debian"
+    pkey: "https://ftp-master.debian.org/keys/archive-key-13.asc"
+    component: "main"
+
   - codename: "noble"
     url: "https://download.01.org/intel-linux-overlay/ubuntu/"
     pkey: "https://download.01.org/intel-linux-overlay/ubuntu/E6FA98203588250569758E97D176E3162086EE4C.gpg"
