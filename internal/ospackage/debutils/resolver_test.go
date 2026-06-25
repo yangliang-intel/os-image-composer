@@ -582,6 +582,66 @@ func TestFilterCandidatesByPriorityWithTarget(t *testing.T) {
 	}
 }
 
+func TestGetRepositoryPriorityIncludesUserAndLocalRepos(t *testing.T) {
+	oldRepoCfgs := RepoCfgs
+	oldUserRepoCfgs := UserRepoCfgs
+	oldLocalRepoCfgs := LocalRepoCfgs
+	oldRepoCfg := RepoCfg
+	defer func() {
+		RepoCfgs = oldRepoCfgs
+		UserRepoCfgs = oldUserRepoCfgs
+		LocalRepoCfgs = oldLocalRepoCfgs
+		RepoCfg = oldRepoCfg
+	}()
+
+	RepoCfgs = []RepoConfig{{PkgPrefix: "https://mirror.elxr.dev/elxr", Priority: 500}}
+	UserRepoCfgs = []RepoConfig{{PkgPrefix: "https://user.repo.local/elxr", Priority: 990}}
+	LocalRepoCfgs = []RepoConfig{{PkgPrefix: "http://127.0.0.1:18080", Priority: 1200}}
+	RepoCfg = RepoConfig{PkgPrefix: "https://legacy.repo.local/elxr", Priority: 450}
+
+	tests := []struct {
+		name string
+		url  string
+		want int
+	}{
+		{
+			name: "local temporary repository priority",
+			url:  "http://127.0.0.1:18080/pool/main/l/linux/linux-image_1.0_amd64.deb",
+			want: 1200,
+		},
+		{
+			name: "user repository priority",
+			url:  "https://user.repo.local/elxr/pool/main/l/linux/linux-image_1.0_amd64.deb",
+			want: 990,
+		},
+		{
+			name: "provider repository priority fallback",
+			url:  "https://mirror.elxr.dev/elxr/pool/main/l/linux/linux-image_1.0_amd64.deb",
+			want: 500,
+		},
+		{
+			name: "single repository legacy fallback",
+			url:  "https://legacy.repo.local/elxr/pool/main/l/linux/linux-image_1.0_amd64.deb",
+			want: 450,
+		},
+		{
+			name: "unknown repository defaults to zero",
+			url:  "https://unknown.repo.invalid/pool/main/l/linux/linux-image_1.0_amd64.deb",
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			got := getRepositoryPriority(tt.url)
+			if got != tt.want {
+				t.Errorf("getRepositoryPriority(%q) = %d, want %d", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveTopPackageConflicts(t *testing.T) {
 	all := []ospackage.PackageInfo{
 		{Name: "acct", Version: "6.6.4-5+b1", URL: "pool/main/a/acct/acct_6.6.4-5+b1_amd64.deb"},

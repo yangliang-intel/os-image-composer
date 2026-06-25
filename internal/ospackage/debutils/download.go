@@ -63,6 +63,7 @@ var (
 	RepoCfg        RepoConfig
 	RepoCfgs       []RepoConfig // Support for multiple repositories
 	UserRepoCfgs   []RepoConfig // Populated from UserRepo packageRepositories
+	LocalRepoCfgs  []RepoConfig // Ephemeral local repositories created from packageRepositories.path/packages
 	PkgChecksum    []pkgChecksum
 	GzHref         string
 	Architecture   string
@@ -648,6 +649,9 @@ func LocalUserPackages() ([]ospackage.PackageInfo, func(), error) {
 	log := logger.Logger()
 	log.Infof("fetching packages from local user package list")
 
+	// Reset per-run local repository configs used by priority matching.
+	LocalRepoCfgs = nil
+
 	var allLocalPackages []ospackage.PackageInfo
 	var cleanups []func()
 	combinedCleanup := func() {
@@ -686,6 +690,10 @@ func LocalUserPackages() ([]ospackage.PackageInfo, func(), error) {
 			return nil, nil, fmt.Errorf("failed to create temporary DEB repository for %s: %w", repoPath, err)
 		}
 		cleanups = append(cleanups, cleanup)
+		LocalRepoCfgs = append(LocalRepoCfgs, RepoConfig{
+			PkgPrefix: strings.TrimSuffix(tempURL, "/"),
+			Priority:  repo.Priority,
+		})
 
 		component := "main"
 		pkggz := fmt.Sprintf("%s/dists/stable/%s/binary-%s/Packages.gz", tempURL, component, Architecture)

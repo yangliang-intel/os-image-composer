@@ -456,6 +456,25 @@ func getRepositoryPriority(packageURL string) int {
 	// Normalize trailing slashes before comparing, since user-supplied URLs may include them
 	// but extractRepoBase always returns a URL without a trailing slash.
 	repoBaseNorm := strings.TrimSuffix(repoBase, "/")
+
+	// Local temporary repositories are generated at runtime from path/packages.
+	if len(LocalRepoCfgs) > 0 {
+		for _, repoCfg := range LocalRepoCfgs {
+			if strings.TrimSuffix(repoCfg.PkgPrefix, "/") == repoBaseNorm {
+				return repoCfg.Priority
+			}
+		}
+	}
+
+	// User-defined URL repositories should override provider defaults when matched.
+	if len(UserRepoCfgs) > 0 {
+		for _, repoCfg := range UserRepoCfgs {
+			if strings.TrimSuffix(repoCfg.PkgPrefix, "/") == repoBaseNorm {
+				return repoCfg.Priority
+			}
+		}
+	}
+
 	if len(RepoCfgs) > 0 {
 		for _, repoCfg := range RepoCfgs {
 			if strings.TrimSuffix(repoCfg.PkgPrefix, "/") == repoBaseNorm {
